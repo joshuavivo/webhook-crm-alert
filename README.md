@@ -87,3 +87,5 @@ check and the backoff one at a time, and each removal turned the matching tests 
   would need its own idempotency key.
 - Steps run one after another and only one event type is handled. A queue and workers would
   replace the inline calls at higher volume.
+
+Joshua Vivo · [shadowvivo.com](https://shadowvivo.com)

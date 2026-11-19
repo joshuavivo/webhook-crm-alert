@@ -53,12 +53,18 @@ Amounts are integer cents end to end. A float amount is rejected at the door.
 
 ## Run it
 
-Node 23.6 or newer runs TypeScript directly. There are no dependencies to install.
+Node 22.18 or newer runs the TypeScript directly, so the app and tests have **no
+runtime dependencies**. Type-checking uses TypeScript as a dev dependency.
 
 ```sh
-npm test
+npm test                            # node:test, no install needed
+npm ci && npm run typecheck         # strict typecheck (CI runs this on Node 22 and 24)
 WEBHOOK_SECRET=dev_only npm start   # listens on :3000 with the in-memory fakes
 ```
+
+How the pipeline stays correct under failure — the crash window, why the chat alert
+is deliberately the last step, the dead-letter/202 reasoning, and a failure model
+with what this does **not** handle — is in [`DESIGN.md`](DESIGN.md).
 
 ## What the tests prove
 
@@ -88,4 +94,8 @@ check and the backoff one at a time, and each removal turned the matching tests 
 - Steps run one after another and only one event type is handled. A queue and workers would
   replace the inline calls at higher volume.
 
-Joshua Vivo · [shadowvivo.com](https://shadowvivo.com)
+(These are expanded, with the failure model, in [`DESIGN.md`](DESIGN.md).)
+
+## Credits
+
+Architected and directed by [Joshua Vivo](https://github.com/joshuavivo) ([Shadow Vivo LLC](https://shadowvivo.com)), built with AI assistance (Claude). The design and the judgment are mine.

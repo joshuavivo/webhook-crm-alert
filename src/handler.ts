@@ -32,14 +32,16 @@ const STEPS: Step[] = ["crm_upsert", "chat_alert"];
 export function createHandler(deps: Deps) {
   const retryOpts: RetryOptions = { ...deps.retry, isRetryable: (e) => !(e instanceof PermanentError) };
 
-  async function handleWebhook(rawBody: string, signatureHeader: string | undefined): Promise<HandlerResult> {
+  // rawBody is the bytes as received. Pass a Buffer from an HTTP server: decoding it to a
+  // string first would turn invalid UTF-8 into U+FFFD and break a valid signature.
+  async function handleWebhook(rawBody: string | Buffer, signatureHeader: string | undefined): Promise<HandlerResult> {
     const nowSec = Math.floor(deps.now().getTime() / 1000);
     const sig = verifySignature(rawBody, signatureHeader, deps.secret, nowSec);
     if (!sig.ok) return { status: 401, body: { error: sig.reason } };
 
     let event: PaymentEvent;
     try {
-      event = JSON.parse(rawBody);
+      event = JSON.parse(typeof rawBody === "string" ? rawBody : rawBody.toString("utf8"));
     } catch {
       return { status: 400, body: { error: "body is not JSON" } };
     }

@@ -2,7 +2,28 @@
 
 Notable changes. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.2.0]
+## [0.2.1] - 2026-11-20
+
+Fixes from an independent review.
+
+### Fixed
+- **Signature check over the raw bytes.** The server decoded the body as UTF-8
+  before computing the HMAC, so a validly signed body containing invalid UTF-8
+  (e.g. a 0xff byte) was rejected with 401. The Buffer now goes to
+  `verifySignature` unchanged and is decoded only for `JSON.parse`. A new HTTP
+  test signs such a body independently of `sign()` and expects 200.
+- The malformed-payload test now asserts that neither rejected event id
+  (`evt_003`, `evt_004`) is claimed; it only checked the first.
+- README: the backoff schedule in `server.ts` is 200/400/800 ms (4 attempts);
+  the 2 s cap it mentioned is never reached there.
+- `package.json` version brought in line with this changelog (it still said
+  0.1.0 after the 0.2.0 entry).
+
+### Added
+- `Makefile` (`make check`, `make start`) and weekly Dependabot update PRs,
+  landed after the 0.2.0 entry was written.
+
+## [0.2.0] - 2026-11-19
 
 ### Added
 - **Type checking.** A `tsconfig.json` under `strict`, a `typecheck` script, and
@@ -20,7 +41,7 @@ Notable changes. Format follows [Keep a Changelog](https://keepachangelog.com/en
 - `engines.node` lowered to `>=22.18.0` (the first release with unflagged
   TypeScript type-stripping), matching the matrix.
 
-## [0.1.0]
+## [0.1.0] - 2026-11-15
 
 ### Added
 - Payment webhook → CRM upsert → chat alert, with signature verification

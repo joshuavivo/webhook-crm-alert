@@ -1,6 +1,6 @@
 {
   "name": "webhook-crm-alert",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Payment webhook -> CRM upsert -> chat alert, with signature checks, idempotency, retries and a dead-letter record.",
   "type": "module",

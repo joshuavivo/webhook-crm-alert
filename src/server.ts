@@ -31,7 +31,7 @@ export function createWebhookServer(handler: ReturnType<typeof createHandler>): 
       if (tooLarge) return reply(413, { error: "body too large" });
       try {
         const header = req.headers[SIGNATURE_HEADER];
-        const result = await handler.handleWebhook(Buffer.concat(chunks).toString("utf8"), Array.isArray(header) ? header[0] : header);
+        const result = await handler.handleWebhook(Buffer.concat(chunks), Array.isArray(header) ? header[0] : header);
         reply(result.status, result.body);
       } catch {
         reply(500, { error: "internal error" });

@@ -49,7 +49,7 @@ Amounts are integer cents end to end. A float amount is rejected at the door.
 | `src/store.ts` | Event and dead-letter store interface, plus the in-memory version. |
 | `src/clients.ts` | CRM and chat interfaces, plus fakes that can be scripted to fail. |
 | `src/server.ts` | `node:http` server on `POST /webhooks/payments`, raw body, 256 KB limit. |
-| `test/` | 18 tests, `node:test`. |
+| `test/` | 19 tests, `node:test`. |
 
 ## Run it
 

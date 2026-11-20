@@ -1,19 +1,23 @@
 // Webhook signature check, shaped like the common "timestamp + HMAC" scheme.
 // Header: `t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<raw body>">`.
 // The timestamp is signed too, so an old delivery cannot be replayed with a fresh header.
+// The body is HMACed as bytes. A Buffer is used as-is; a string is encoded as UTF-8.
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const DEFAULT_TOLERANCE_SECONDS = 300;
 
 export type SignatureResult = { ok: true } | { ok: false; reason: string };
 
-export function sign(rawBody: string, secret: string, timestamp: number): string {
-  const mac = createHmac("sha256", secret).update(`${timestamp}.${rawBody}`).digest("hex");
-  return `t=${timestamp},v1=${mac}`;
+function mac(rawBody: string | Uint8Array, secret: string, timestamp: number): string {
+  return createHmac("sha256", secret).update(`${timestamp}.`).update(rawBody).digest("hex");
+}
+
+export function sign(rawBody: string | Uint8Array, secret: string, timestamp: number): string {
+  return `t=${timestamp},v1=${mac(rawBody, secret, timestamp)}`;
 }
 
 export function verifySignature(
-  rawBody: string,
+  rawBody: string | Uint8Array,
   header: string | undefined,
   secret: string,
   nowSeconds: number,
@@ -32,7 +36,7 @@ export function verifySignature(
   if (candidates.length === 0) return { ok: false, reason: "missing v1 signature" };
   if (Math.abs(nowSeconds - timestamp) > toleranceSeconds) return { ok: false, reason: "timestamp outside tolerance" };
 
-  const expected = Buffer.from(createHmac("sha256", secret).update(`${timestamp}.${rawBody}`).digest("hex"), "utf8");
+  const expected = Buffer.from(mac(rawBody, secret, timestamp), "utf8");
   // Several v1 values are allowed so a secret can be rotated without dropping events.
   for (const c of candidates) {
     const given = Buffer.from(c, "utf8");

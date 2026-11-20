@@ -122,4 +122,5 @@ test("malformed payloads get 400 and do not claim the id", async () => {
   const floatAmount = paymentEvent("evt_004", { data: { customer_email: "a@example.com", amount_cents: 42.5, currency: "usd" } });
   assert.equal((await deliver(handler, floatAmount)).status, 400);
   assert.equal(store.get("evt_003"), undefined);
+  assert.equal(store.get("evt_004"), undefined);
 });

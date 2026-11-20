@@ -29,8 +29,10 @@ chat API, but this is not any vendor's code and it needs no accounts or keys.
    cannot both win. (In a database this is a unique key with `INSERT … ON CONFLICT DO NOTHING`.)
 3. **Run the steps in order:** CRM upsert, then chat alert. Each step that succeeds is recorded
    against the event.
-4. **Retry each outbound call** with exponential backoff (200 ms, 400 ms, … capped at 2 s in `server.ts`). Errors
-   marked permanent, like a 400, are not retried.
+4. **Retry each outbound call** with exponential backoff. `server.ts` allows 4 attempts, so
+   a call that keeps failing waits 200 ms, 400 ms, then 800 ms between tries. Each wait is
+   capped at `maxDelayMs` (2 s there), which only matters with more attempts. Errors marked
+   permanent, like a 400, are not retried.
 5. **Dead-letter on exhaustion.** The event, the failing step, the attempt count and the last
    error are recorded, and the webhook returns `202`. The event is ours now, and asking the
    provider to resend it would only create a second copy.

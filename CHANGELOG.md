@@ -12,6 +12,9 @@ Notable changes. Format follows [Keep a Changelog](https://keepachangelog.com/en
   dead-lettered with a 202, and every replay failed the same way. `created` must now be a positive Unix time a date can hold, `amount_cents` a
   positive safe integer, and `currency` three letters; anything else is a 400 at the
   door and the event id is not claimed.
+- **Zero-decimal currencies in the alert.** `formatMoney` always divided by 100, so
+  1000 JPY was announced as "10.00 JPY". Currencies with no minor unit (Stripe's
+  zero-decimal list: JPY, KRW, VND and others) are now shown as whole units.
 
 ## [0.2.1] - 2026-11-20
 

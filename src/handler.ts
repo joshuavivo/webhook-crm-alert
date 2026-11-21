@@ -129,8 +129,14 @@ function validate(e: unknown): string | null {
   return null;
 }
 
-export function formatMoney(cents: number, currency: string): string {
-  const sign = cents < 0 ? "-" : "";
-  const abs = Math.abs(cents);
-  return `${sign}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, "0")} ${currency.toUpperCase()}`;
+// Currencies with no minor unit: the amount is already whole units (Stripe's zero-decimal list;
+// UGX is left out because Stripe sends it with two decimals).
+const ZERO_DECIMAL = new Set(["BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA", "PYG", "RWF", "VND", "VUV", "XAF", "XOF", "XPF"]);
+
+export function formatMoney(minorUnits: number, currency: string): string {
+  const code = currency.toUpperCase();
+  const sign = minorUnits < 0 ? "-" : "";
+  const abs = Math.abs(minorUnits);
+  if (ZERO_DECIMAL.has(code)) return `${sign}${abs} ${code}`;
+  return `${sign}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, "0")} ${code}`;
 }

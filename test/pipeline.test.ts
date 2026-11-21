@@ -147,3 +147,11 @@ test("an impossible timestamp or amount is rejected at the door, not retried int
   assert.equal(chat.calls, 0);
   assert.deepEqual(sleeps, []);
 });
+
+test("zero-decimal currencies are not divided by 100 in the alert", async () => {
+  // 1000 JPY is a thousand yen, not 10.00: JPY and KRW have no minor unit.
+  const { handler, chat } = setup();
+  const body = paymentEvent("evt_020", { data: { customer_email: "a@example.com", amount_cents: 1000, currency: "jpy" } });
+  assert.equal((await deliver(handler, body)).status, 200);
+  assert.match(chat.messages[0].text, /Payment received: 1000 JPY from a@example\.com/);
+});

@@ -39,7 +39,7 @@ chat API, but this is not any vendor's code and it needs no accounts or keys.
 6. **Replay** a dead letter with `replayDeadLetter(eventId)`. Steps that already succeeded are
    skipped.
 
-Amounts are integer cents end to end. A float amount is rejected at the door.
+Amounts are integer cents end to end. A float, zero, negative or out-of-range amount, a currency that isn't three letters, and a timestamp no clock can show are rejected at the door with a 400, before the event id is claimed, so impossible data neither posts a bogus alert nor gets retried into the dead letter.
 
 ## Files
 
@@ -51,7 +51,7 @@ Amounts are integer cents end to end. A float amount is rejected at the door.
 | `src/store.ts` | Event and dead-letter store interface, plus the in-memory version. |
 | `src/clients.ts` | CRM and chat interfaces, plus fakes that can be scripted to fail. |
 | `src/server.ts` | `node:http` server on `POST /webhooks/payments`, raw body, 256 KB limit. |
-| `test/` | 19 tests, `node:test`. |
+| `test/` | 20 tests, `node:test`. |
 
 ## Run it
 

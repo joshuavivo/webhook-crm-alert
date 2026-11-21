@@ -124,3 +124,26 @@ test("malformed payloads get 400 and do not claim the id", async () => {
   assert.equal(store.get("evt_003"), undefined);
   assert.equal(store.get("evt_004"), undefined);
 });
+
+test("an impossible timestamp or amount is rejected at the door, not retried into the dead letter", async () => {
+  // created: 1e15 passed the old typeof check, then new Date(...).toISOString() threw inside the
+  // CRM step: retried, dead-lettered with a 202, and every replay would fail the same way.
+  const { handler, store, crm, chat, sleeps } = setup();
+  const data = { customer_email: "a@example.com", amount_cents: 4200, currency: "usd" };
+  const cases: Array<[string, Record<string, unknown>]> = [
+    ["evt_010", { created: 1e15 }],
+    ["evt_011", { created: -5 }],
+    ["evt_012", { data: { ...data, amount_cents: 0 } }],
+    ["evt_013", { data: { ...data, amount_cents: -4200 } }],
+    ["evt_014", { data: { ...data, amount_cents: 2 ** 60 } }],
+    ["evt_015", { data: { ...data, currency: "$$$" } }],
+  ];
+  for (const [id, overrides] of cases) {
+    const res = await deliver(handler, paymentEvent(id, overrides));
+    assert.equal(res.status, 400, `${id} should be rejected`);
+    assert.equal(store.get(id), undefined, `${id} should not claim the id`);
+  }
+  assert.equal(crm.calls, 0);
+  assert.equal(chat.calls, 0);
+  assert.deepEqual(sleeps, []);
+});

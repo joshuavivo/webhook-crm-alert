@@ -109,17 +109,23 @@ export function createHandler(deps: Deps) {
   return { handleWebhook, replayDeadLetter };
 }
 
+const MAX_CREATED = 8.64e12; // seconds; new Date(ms) is valid up to 8.64e15 ms
+
 function validate(e: unknown): string | null {
   if (typeof e !== "object" || e === null) return "event must be an object";
   const ev = e as Partial<PaymentEvent>;
   if (typeof ev.id !== "string" || !ev.id) return "event.id is required";
   if (typeof ev.type !== "string" || !ev.type) return "event.type is required";
   if (ev.type !== HANDLED_TYPE) return null; // other types are acknowledged and ignored
-  if (typeof ev.created !== "number") return "event.created is required";
+  // Checked here, before the id is claimed: a value that can never succeed must get a 400, not be
+  // retried and dead-lettered. MAX_CREATED is the largest Unix time a JS Date can represent.
+  if (!Number.isSafeInteger(ev.created) || (ev.created as number) <= 0 || (ev.created as number) > MAX_CREATED) {
+    return "event.created must be a Unix timestamp in seconds";
+  }
   const d = ev.data;
   if (!d || typeof d.customer_email !== "string" || !d.customer_email.includes("@")) return "data.customer_email is required";
-  if (!Number.isInteger(d.amount_cents)) return "data.amount_cents must be an integer";
-  if (typeof d.currency !== "string" || d.currency.length !== 3) return "data.currency must be a 3-letter code";
+  if (!Number.isSafeInteger(d.amount_cents) || d.amount_cents <= 0) return "data.amount_cents must be a positive whole number of minor units";
+  if (typeof d.currency !== "string" || !/^[A-Za-z]{3}$/.test(d.currency)) return "data.currency must be a 3-letter code";
   return null;
 }
 

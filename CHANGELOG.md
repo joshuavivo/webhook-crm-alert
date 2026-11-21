@@ -2,6 +2,17 @@
 
 Notable changes. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+- **Bad data is rejected at the door.** Zero, negative and out-of-range amounts, a
+  negative timestamp and a non-letter currency were accepted and posted a "Payment
+  received" alert. `created` was only checked to be a number, so `created: 1e15`
+  passed, then `new Date(...)` threw inside the CRM step: the event was retried,
+  dead-lettered with a 202, and every replay failed the same way. `created` must now be a positive Unix time a date can hold, `amount_cents` a
+  positive safe integer, and `currency` three letters; anything else is a 400 at the
+  door and the event id is not claimed.
+
 ## [0.2.1] - 2026-11-20
 
 Fixes from an independent review.

@@ -24,7 +24,9 @@ flowchart TD
 ## Exactly-once *effects* on an at-least-once channel
 
 A provider retries until it gets a 2xx, so the same event arrives more than once.
-Two mechanisms make the effects happen once:
+Two mechanisms make the effects happen once under redelivery and failed calls
+(the exceptions, a crash mid-processing and a chat post whose reply is lost, are in
+the failure model below):
 
 1. **Claim.** The first delivery inserts an event record; the check and the insert
    are one synchronous block, so two simultaneous deliveries cannot both win (the
@@ -88,11 +90,15 @@ verification, because re-serialising would change the bytes and break the HMAC.
 |---|---|
 | Forged / tampered / missing / stale-timestamp request | Signature check; nothing is claimed |
 | Duplicate or concurrent delivery | Atomic claim → `200 duplicate` |
-| Transient outbound failure (timeout, 503) | Retry with backoff |
+| Transient outbound failure (timeout, 503) | Retry with backoff (a chat post that was delivered but timed out is posted again; see below) |
 | Permanent outbound failure (400, auth) | Dead-letter on first try |
 | Half-finished event (CRM ok, chat failed) | Per-step checkpoints; replay skips CRM |
 
 What it does **not** handle (documented, not hidden):
+- **A lost chat response.** If the chat API received the post but the response
+  timed out, the retry posts it again, so the alert appears twice. Retrying is right
+  for the CRM upsert (idempotent) but not for the chat post, which has no idempotency
+  key here.
 
 - **Durability.** The store is in memory, so a restart loses everything. A real
   deployment is a database table with a unique key on the event id.

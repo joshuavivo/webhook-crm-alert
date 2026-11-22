@@ -12,7 +12,7 @@ test("happy path: one CRM upsert and one alert", async () => {
   assert.equal(res.status, 200);
   assert.equal(crm.contacts.get("ada@example.com")?.lastPaymentCents, 4200);
   assert.deepEqual(chat.messages, [
-    { channel: "#payments", text: "Payment received: 42.00 USD from Ada Example <ada@example.com> (event evt_001)" },
+    { channel: "#payments", text: "Payment received: 42.00 USD from Ada Example (ada@example.com) (event evt_001)" },
   ]);
   assert.equal(store.get("evt_001")?.status, "done");
 });
@@ -203,5 +203,16 @@ test("chat-safe text stays on one line for every line break, and leaves real add
   const text = chat.messages[0].text;
   assert.doesNotMatch(text, /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/);
   assert.doesNotMatch(text, /@(everyone|here|channel)/i); // every mention, in the name and the email, is broken
-  assert.match(text, /<pat@\u200bhere\.com>/); // even a real address: x@everyone.com would otherwise ping
+  assert.match(text, /\(pat@\u200bhere\.com\)/); // even a real address: x@everyone.com would otherwise ping
+});
+
+test("an email can't close into Slack's <!channel> syntax", async () => {
+  // "!channel|a@b.co" is a valid email shape. Wrapped in literal <...> it became <!channel|a@b.co>,
+  // Slack's own channel-mention token. Customer text is never wrapped in raw angle brackets.
+  const { handler, chat } = setup();
+  for (const [id, email] of [["evt_040", "!channel|a@b.co"], ["evt_041", "!subteam^S123|a@b.co"]]) {
+    const body = paymentEvent(id, { data: { customer_email: email, customer_name: "Ada", amount_cents: 4200, currency: "usd" } });
+    assert.equal((await deliver(handler, body)).status, 200);
+  }
+  for (const m of chat.messages) assert.doesNotMatch(m.text, /<!/);
 });

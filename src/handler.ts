@@ -102,7 +102,9 @@ export function createHandler(deps: Deps) {
       });
     } else {
       const email = chatSafe(d.customer_email);
-      const who = d.customer_name ? `${chatSafe(d.customer_name)} <${email}>` : email;
+      // Parentheses, not <...>: customer text inside raw angle brackets can form a chat token
+      // (an email of "!channel|a@b.co" became Slack's <!channel|...> mention).
+      const who = d.customer_name ? `${chatSafe(d.customer_name)} (${email})` : email;
       await deps.chat.postMessage(deps.alertChannel, `Payment received: ${formatMoney(d.amount_cents, d.currency)} from ${who} (event ${chatSafe(event.id)})`);
     }
   }

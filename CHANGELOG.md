@@ -22,6 +22,10 @@ Notable changes. Format follows [Keep a Changelog](https://keepachangelog.com/en
   mention broken, in the email too (a valid address like `x@everyone.com` would otherwise
   ping; the cost is a hidden character in such an address). A non-text or overlong name and an email that isn't shaped like
   one (`"@"`) are rejected at the door; they used to post `[object Object] <@>`.
+- **The email is no longer wrapped in `<...>` in the alert.** The alert read
+  `Name <email>`, and an email like `!channel|a@b.co` passes validation, so the message
+  contained `<!channel|a@b.co>`, Slack's channel-mention token. It now reads
+  `Name (email)`. Found by a pre-push review.
 - **Three-decimal currencies in the alert.** 5120 KWD minor units was shown as
   "51.20 KWD" instead of 5.120. BHD, JOD, KWD, OMR and TND now use three decimals.
 

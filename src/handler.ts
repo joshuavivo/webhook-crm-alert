@@ -133,10 +133,15 @@ function validate(e: unknown): string | null {
 // UGX is left out because Stripe sends it with two decimals).
 const ZERO_DECIMAL = new Set(["BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA", "PYG", "RWF", "VND", "VUV", "XAF", "XOF", "XPF"]);
 
+// Currencies with three decimal places (1 dinar = 1000 fils).
+const THREE_DECIMAL = new Set(["BHD", "JOD", "KWD", "OMR", "TND"]);
+
 export function formatMoney(minorUnits: number, currency: string): string {
   const code = currency.toUpperCase();
   const sign = minorUnits < 0 ? "-" : "";
   const abs = Math.abs(minorUnits);
   if (ZERO_DECIMAL.has(code)) return `${sign}${abs} ${code}`;
-  return `${sign}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, "0")} ${code}`;
+  const places = THREE_DECIMAL.has(code) ? 3 : 2;
+  const unit = 10 ** places;
+  return `${sign}${Math.floor(abs / unit)}.${String(abs % unit).padStart(places, "0")} ${code}`;
 }

@@ -15,6 +15,8 @@ Notable changes. Format follows [Keep a Changelog](https://keepachangelog.com/en
 - **Zero-decimal currencies in the alert.** `formatMoney` always divided by 100, so
   1000 JPY was announced as "10.00 JPY". Currencies with no minor unit (Stripe's
   zero-decimal list: JPY, KRW, VND and others) are now shown as whole units.
+- **Three-decimal currencies in the alert.** 5120 KWD minor units was shown as
+  "51.20 KWD" instead of 5.120. BHD, JOD, KWD, OMR and TND now use three decimals.
 
 ## [0.2.1] - 2026-11-20
 

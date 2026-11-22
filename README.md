@@ -46,7 +46,7 @@ chat API, but this is not any vendor's code and it needs no accounts or keys.
 6. **Replay** a dead letter with `replayDeadLetter(eventId)`. Steps that already succeeded are
    skipped.
 
-Amounts are integers in the currency's smallest unit end to end (cents for USD, whole yen for JPY). A float, zero, negative or out-of-range amount, a currency that isn't three letters, and a timestamp no clock can show are rejected at the door with a 400, before the event id is claimed, so impossible data neither posts a bogus alert nor gets retried into the dead letter.
+Amounts are integers in the currency's smallest unit end to end (cents for USD, whole yen for JPY, fils for KWD). A float, zero, negative or out-of-range amount, a currency that isn't three letters, and a timestamp no clock can show are rejected at the door with a 400, before the event id is claimed, so impossible data neither posts a bogus alert nor gets retried into the dead letter.
 
 ## Files
 
@@ -58,7 +58,7 @@ Amounts are integers in the currency's smallest unit end to end (cents for USD, 
 | `src/store.ts` | Event and dead-letter store interface, plus the in-memory version. |
 | `src/clients.ts` | CRM and chat interfaces, plus fakes that can be scripted to fail. |
 | `src/server.ts` | `node:http` server on `POST /webhooks/payments`, raw body, 256 KB limit. |
-| `test/` | 21 tests, `node:test`. |
+| `test/` | 22 tests, `node:test`. |
 
 ## Run it
 

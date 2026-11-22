@@ -155,3 +155,11 @@ test("zero-decimal currencies are not divided by 100 in the alert", async () => 
   assert.equal((await deliver(handler, body)).status, 200);
   assert.match(chat.messages[0].text, /Payment received: 1000 JPY from a@example\.com/);
 });
+
+test("three-decimal currencies are divided by 1000 in the alert", async () => {
+  // 5120 KWD minor units is 5.120 dinar, not 51.20.
+  const { handler, chat } = setup();
+  const body = paymentEvent("evt_021", { data: { customer_email: "a@example.com", amount_cents: 5120, currency: "kwd" } });
+  assert.equal((await deliver(handler, body)).status, 200);
+  assert.match(chat.messages[0].text, /Payment received: 5\.120 KWD from a@example\.com/);
+});

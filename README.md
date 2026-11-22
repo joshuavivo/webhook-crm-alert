@@ -3,9 +3,10 @@
 **When a "payment received" alert goes missing, nobody follows up with the customer who just
 paid. When it fires twice, two people chase the same customer.** This sample makes the alert
 and the CRM update happen once under provider retries and failed outbound calls, and when
-something fails, it lands where a person can see it and replay it. (Two gaps remain: a crash
-mid-processing, and a chat post whose reply is lost, which is retried and can repeat the alert;
-see Limits.)
+something fails, it lands in a dead-letter list (`store.deadLetters()`) that a person or a
+script can replay (`replayDeadLetter`); there is no UI or route for it. (Three gaps remain: a
+crash mid-processing, a chat post whose reply is lost, and a restart, because the record of
+handled events is in memory; see Limits.)
 
 A payment provider sends a webhook when a charge succeeds. Someone wants the customer in the
 CRM and a message in the team channel. That part is easy. The hard part is what happens when
@@ -106,6 +107,14 @@ check and the backoff one at a time, and each removal turned the matching tests 
   would need its own idempotency key.
 - If the chat post goes through but its reply is lost (a timeout), the retry posts it again and
   the alert appears twice. The chat step has no idempotency key; a real version would add one.
+- A signed event that fails validation (say a $0 payment) gets a 400 and is not stored. The
+  provider keeps retrying it and shows it as failing in its own dashboard; this sample keeps no
+  record of it. A real version would also log or store rejected payloads.
+- Replaying an old dead letter after a newer payment for the same customer sets the CRM's last
+  payment back to the older one: the upsert carries no event time to compare. A real version
+  sends `created` and lets the CRM keep the newest.
+- Emails are passed as received, so `Ada@Example.com` and `ada@example.com` are two contacts,
+  and the CRM gets the amount without its currency.
 - Steps run one after another and only one event type is handled. A queue and workers would
   replace the inline calls at higher volume.
 

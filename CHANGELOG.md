@@ -23,6 +23,14 @@ Notable changes. Format follows [Keep a Changelog](https://keepachangelog.com/en
 - **Three-decimal currencies in the alert.** 5120 KWD minor units was shown as
   "51.20 KWD" instead of 5.120. BHD, JOD, KWD, OMR and TND now use three decimals.
 
+### Changed
+- The README's first screen now says where a failed event goes (a dead-letter list
+  that code can replay; there is no UI) and counts three gaps, not two: a restart
+  is one, since handled events are remembered in memory. README Limits and
+  DESIGN.md now also cover an old event replayed after a newer one (the CRM's last
+  payment goes backwards), signed events that fail validation (400, not stored),
+  and emails compared case-sensitively.
+
 ## [0.2.1] - 2026-11-20
 
 Fixes from an independent review.

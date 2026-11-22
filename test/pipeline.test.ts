@@ -194,3 +194,14 @@ test("text the customer typed can't add mentions or lines to the alert", async (
 test("backoff doubles and is capped at maxDelayMs", () => {
   assert.deepEqual(backoffDelays({ attempts: 6, baseDelayMs: 100, maxDelayMs: 500 }), [100, 200, 400, 500, 500]);
 });
+
+test("chat-safe text stays on one line for every line break, and leaves real addresses intact", async () => {
+  const { handler, chat } = setup();
+  const name = "Ada\u2028Payment received: 1.00 USD\u2029x\u0085y\u009bz @everyone. @here-now (@channel) -@everyone x@everyone .@here +@channel _@here @everyone.x a@here.com";
+  const body = paymentEvent("evt_034", { data: { customer_email: "pat@here.com", customer_name: name, amount_cents: 4200, currency: "usd" } });
+  assert.equal((await deliver(handler, body)).status, 200);
+  const text = chat.messages[0].text;
+  assert.doesNotMatch(text, /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/);
+  assert.doesNotMatch(text, /@(everyone|here|channel)/i); // every mention, in the name and the email, is broken
+  assert.match(text, /<pat@\u200bhere\.com>/); // even a real address: x@everyone.com would otherwise ping
+});

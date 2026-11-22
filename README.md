@@ -27,8 +27,12 @@ with in-memory fakes. They are shaped like a typical contacts API and a typical 
 chat API, but this is not any vendor's code and it needs no accounts or keys.
 
 Text the customer typed (their name, their email) is made safe before it goes into the team
-chat: one line, no markup, and no `@everyone`-style mentions, so a name typed at checkout
-can't ping the channel or add a fake "Payment received" line.
+chat: one line, no mention or link syntax (`&<>` escaped), and no `@everyone`-style mentions,
+so a name typed at checkout can't ping the channel or add a fake "Payment received" line.
+Ordinary formatting such as `*bold*` still passes through, and a chat app may still turn a
+bare URL in a name into a link. An email at a domain starting with `here`, `everyone` or
+`channel` is shown with a hidden zero-width character after the `@`, so a copy of it won't
+paste cleanly; that is the price of `x@everyone.com` not pinging the channel.
 
 ## How it works
 
@@ -63,7 +67,7 @@ Amounts are integers in the currency's smallest unit end to end (cents for USD, 
 | `src/store.ts` | Event and dead-letter store interface, plus the in-memory version. |
 | `src/clients.ts` | CRM and chat interfaces, plus fakes that can be scripted to fail. |
 | `src/server.ts` | `node:http` server on `POST /webhooks/payments`, raw body, 256 KB limit. |
-| `test/` | 26 tests, `node:test`. |
+| `test/` | 27 tests, `node:test`. |
 
 ## Run it
 

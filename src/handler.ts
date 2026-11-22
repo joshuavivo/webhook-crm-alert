@@ -112,14 +112,16 @@ export function createHandler(deps: Deps) {
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // shape only; the provider already verified it
 
-// Text the customer typed goes into a team chat. Keep it to one line and stop it from
-// becoming markup or a mention: no control characters or newlines, &<> escaped (Slack-style
-// markup), and @everyone/@here/@channel broken with a zero-width space.
+// Text the customer typed goes into a team chat. Keep it to one line and stop it from becoming
+// a mention or a link: control characters and every line break (including U+2028/2029 and the
+// C1 range) become spaces, &<> are escaped (Slack-style mention/link syntax), and every
+// @everyone/@here/@channel gets a zero-width space, in the email too: x@everyone.com is a valid
+// address and would still read as a mention. The cost is a hidden character in such an address. Ordinary formatting (*bold*) passes.
 export function chatSafe(text: string): string {
   return text
-    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ")
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/@(everyone|here|channel)/gi, "@\u200b$1");
+    .replace(/@(everyone|here|channel)/gi, "@\u200b$1"); // every field, the email too
 }
 
 const MAX_CREATED = 8.64e12; // seconds; new Date(ms) is valid up to 8.64e15 ms

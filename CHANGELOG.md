@@ -17,8 +17,10 @@ Notable changes. Format follows [Keep a Changelog](https://keepachangelog.com/en
   zero-decimal list: JPY, KRW, VND and others) are now shown as whole units.
 - **Customer text can't forge or ping in the alert.** A name typed at checkout went into
   the chat verbatim, so `<!channel> @everyone` plus a newline could ping the channel and
-  add a fake "Payment received" line. Customer text is now one line, markup-escaped, with
-  mass mentions broken. A non-text or overlong name and an email that isn't shaped like
+  add a fake "Payment received" line. Customer text is now one line (every line break,
+  including U+2028/2029 and C1 controls, becomes a space), with `&<>` escaped and every mass
+  mention broken, in the email too (a valid address like `x@everyone.com` would otherwise
+  ping; the cost is a hidden character in such an address). A non-text or overlong name and an email that isn't shaped like
   one (`"@"`) are rejected at the door; they used to post `[object Object] <@>`.
 - **Three-decimal currencies in the alert.** 5120 KWD minor units was shown as
   "51.20 KWD" instead of 5.120. BHD, JOD, KWD, OMR and TND now use three decimals.

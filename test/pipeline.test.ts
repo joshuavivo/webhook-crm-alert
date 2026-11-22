@@ -163,3 +163,29 @@ test("three-decimal currencies are divided by 1000 in the alert", async () => {
   assert.equal((await deliver(handler, body)).status, 200);
   assert.match(chat.messages[0].text, /Payment received: 5\.120 KWD from a@example\.com/);
 });
+
+test("a customer name or email that can't be real is rejected at the door", async () => {
+  const { handler, store, chat } = setup();
+  const cases: Array<[string, Record<string, unknown>]> = [
+    ["evt_030", { customer_email: "a@example.com", customer_name: { a: 1 }, amount_cents: 4200, currency: "usd" }],
+    ["evt_031", { customer_email: "@", amount_cents: 4200, currency: "usd" }],
+    ["evt_032", { customer_email: "a b@example.com", amount_cents: 4200, currency: "usd" }],
+  ];
+  for (const [id, data] of cases) {
+    assert.equal((await deliver(handler, paymentEvent(id, { data }))).status, 400, `${id} should be rejected`);
+    assert.equal(store.get(id), undefined);
+  }
+  assert.equal(chat.calls, 0);
+});
+
+test("text the customer typed can't add mentions or lines to the alert", async () => {
+  // Whoever types a name at checkout must not be able to ping the channel or forge a line.
+  const { handler, chat } = setup();
+  const name = "<!channel> @everyone\nPayment received: 99999.00 USD from ceo@example.com";
+  const body = paymentEvent("evt_033", { data: { customer_email: "a@example.com", customer_name: name, amount_cents: 4200, currency: "usd" } });
+  assert.equal((await deliver(handler, body)).status, 200);
+  const text = chat.messages[0].text;
+  assert.equal(text.split("\n").length, 1);
+  assert.doesNotMatch(text, /<!channel>|@everyone/);
+  assert.match(text, /^Payment received: 42\.00 USD from /);
+});

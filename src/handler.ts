@@ -101,12 +101,25 @@ export function createHandler(deps: Deps) {
         lastPaymentAt: new Date(event.created * 1000).toISOString(),
       });
     } else {
-      const who = d.customer_name ? `${d.customer_name} <${d.customer_email}>` : d.customer_email;
-      await deps.chat.postMessage(deps.alertChannel, `Payment received: ${formatMoney(d.amount_cents, d.currency)} from ${who} (event ${event.id})`);
+      const email = chatSafe(d.customer_email);
+      const who = d.customer_name ? `${chatSafe(d.customer_name)} <${email}>` : email;
+      await deps.chat.postMessage(deps.alertChannel, `Payment received: ${formatMoney(d.amount_cents, d.currency)} from ${who} (event ${chatSafe(event.id)})`);
     }
   }
 
   return { handleWebhook, replayDeadLetter };
+}
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // shape only; the provider already verified it
+
+// Text the customer typed goes into a team chat. Keep it to one line and stop it from
+// becoming markup or a mention: no control characters or newlines, &<> escaped (Slack-style
+// markup), and @everyone/@here/@channel broken with a zero-width space.
+export function chatSafe(text: string): string {
+  return text
+    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/@(everyone|here|channel)/gi, "@\u200b$1");
 }
 
 const MAX_CREATED = 8.64e12; // seconds; new Date(ms) is valid up to 8.64e15 ms
@@ -123,7 +136,10 @@ function validate(e: unknown): string | null {
     return "event.created must be a Unix timestamp in seconds";
   }
   const d = ev.data;
-  if (!d || typeof d.customer_email !== "string" || !d.customer_email.includes("@")) return "data.customer_email is required";
+  if (!d || typeof d.customer_email !== "string" || !EMAIL.test(d.customer_email)) return "data.customer_email must be an email address";
+  if (d.customer_name !== undefined && (typeof d.customer_name !== "string" || d.customer_name.length > 200)) {
+    return "data.customer_name must be text of at most 200 characters";
+  }
   if (!Number.isSafeInteger(d.amount_cents) || d.amount_cents <= 0) return "data.amount_cents must be a positive whole number of minor units";
   if (typeof d.currency !== "string" || !/^[A-Za-z]{3}$/.test(d.currency)) return "data.currency must be a 3-letter code";
   return null;

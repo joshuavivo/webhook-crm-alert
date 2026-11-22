@@ -15,6 +15,11 @@ Notable changes. Format follows [Keep a Changelog](https://keepachangelog.com/en
 - **Zero-decimal currencies in the alert.** `formatMoney` always divided by 100, so
   1000 JPY was announced as "10.00 JPY". Currencies with no minor unit (Stripe's
   zero-decimal list: JPY, KRW, VND and others) are now shown as whole units.
+- **Customer text can't forge or ping in the alert.** A name typed at checkout went into
+  the chat verbatim, so `<!channel> @everyone` plus a newline could ping the channel and
+  add a fake "Payment received" line. Customer text is now one line, markup-escaped, with
+  mass mentions broken. A non-text or overlong name and an email that isn't shaped like
+  one (`"@"`) are rejected at the door; they used to post `[object Object] <@>`.
 - **Three-decimal currencies in the alert.** 5120 KWD minor units was shown as
   "51.20 KWD" instead of 5.120. BHD, JOD, KWD, OMR and TND now use three decimals.
 

@@ -25,6 +25,10 @@ I built this sample to show how I handle those four cases. The CRM and chat clie
 with in-memory fakes. They are shaped like a typical contacts API and a typical incoming-webhook
 chat API, but this is not any vendor's code and it needs no accounts or keys.
 
+Text the customer typed (their name, their email) is made safe before it goes into the team
+chat: one line, no markup, and no `@everyone`-style mentions, so a name typed at checkout
+can't ping the channel or add a fake "Payment received" line.
+
 ## How it works
 
 1. **Verify.** The signature header is `t=<unix seconds>,v1=<hex HMAC-SHA256>` over
@@ -46,7 +50,7 @@ chat API, but this is not any vendor's code and it needs no accounts or keys.
 6. **Replay** a dead letter with `replayDeadLetter(eventId)`. Steps that already succeeded are
    skipped.
 
-Amounts are integers in the currency's smallest unit end to end (cents for USD, whole yen for JPY, fils for KWD). A float, zero, negative or out-of-range amount, a currency that isn't three letters, and a timestamp no clock can show are rejected at the door with a 400, before the event id is claimed, so impossible data neither posts a bogus alert nor gets retried into the dead letter.
+Amounts are integers in the currency's smallest unit end to end (cents for USD, whole yen for JPY, fils for KWD). A float, zero, negative or out-of-range amount, a currency that isn't three letters, an email that isn't shaped like one, a non-text or overlong name, and a timestamp no clock can show are rejected at the door with a 400, before the event id is claimed, so impossible data neither posts a bogus alert nor gets retried into the dead letter.
 
 ## Files
 
@@ -58,7 +62,7 @@ Amounts are integers in the currency's smallest unit end to end (cents for USD, 
 | `src/store.ts` | Event and dead-letter store interface, plus the in-memory version. |
 | `src/clients.ts` | CRM and chat interfaces, plus fakes that can be scripted to fail. |
 | `src/server.ts` | `node:http` server on `POST /webhooks/payments`, raw body, 256 KB limit. |
-| `test/` | 22 tests, `node:test`. |
+| `test/` | 24 tests, `node:test`. |
 
 ## Run it
 

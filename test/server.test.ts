@@ -44,3 +44,16 @@ test("over HTTP: the signature is checked over the raw bytes, even when they are
   assert.equal(res.status, 200);
   assert.equal(crm.calls, 1);
 });
+
+test("over HTTP: a body over 256 KiB is refused with 413 and nothing is written", async (t) => {
+  const { handler, crm, store } = setup();
+  const server = createWebhookServer(handler).listen(0);
+  t.after(() => server.close());
+  await new Promise((r) => server.once("listening", r));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const body = paymentEvent("evt_big", { padding: "x".repeat(300 * 1024) });
+  const res = await fetch(base + WEBHOOK_PATH, { method: "POST", body, headers: { [SIGNATURE_HEADER]: signed(body) } });
+  assert.equal(res.status, 413);
+  assert.equal(crm.calls, 0);
+  assert.equal(store.get("evt_big"), undefined);
+});

@@ -19,11 +19,13 @@ test("bad signature is rejected with 401 and nothing is written", async () => {
 });
 
 test("a body changed after signing is rejected", async () => {
-  const { handler, crm } = setup();
+  const { handler, crm, chat, store } = setup();
   const header = signed(paymentEvent());
   const tampered = paymentEvent("evt_001", { data: { customer_email: "ada@example.com", amount_cents: 1, currency: "usd" } });
   assert.equal((await handler.handleWebhook(tampered, header)).status, 401);
   assert.equal(crm.calls, 0);
+  assert.equal(chat.calls, 0);
+  assert.equal(store.get("evt_001"), undefined);
 });
 
 test("missing header, missing timestamp and missing v1 are each rejected, and nothing is written", async () => {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { PermanentError } from "../src/clients.ts";
+import { backoffDelays } from "../src/retry.ts";
 import { paymentEvent, setup, signed } from "./helpers.ts";
 
 const deliver = (h: ReturnType<typeof setup>["handler"], body: string) => h.handleWebhook(body, signed(body));
@@ -188,4 +189,8 @@ test("text the customer typed can't add mentions or lines to the alert", async (
   assert.equal(text.split("\n").length, 1);
   assert.doesNotMatch(text, /<!channel>|@everyone/);
   assert.match(text, /^Payment received: 42\.00 USD from /);
+});
+
+test("backoff doubles and is capped at maxDelayMs", () => {
+  assert.deepEqual(backoffDelays({ attempts: 6, baseDelayMs: 100, maxDelayMs: 500 }), [100, 200, 400, 500, 500]);
 });

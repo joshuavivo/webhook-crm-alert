@@ -5,6 +5,9 @@ most for real money — the failure model, including what it does **not** handle
 
 ## The shape
 
+This diagram, the next two sections and the failure-model table describe the memory path
+(`handler.ts`). The Postgres path is described in its own section below.
+
 ```mermaid
 flowchart TD
   A["POST /webhooks/payments<br/>(raw body)"] --> V{verify signature<br/>t + HMAC, constant-time}
@@ -57,8 +60,7 @@ runs it again. That means **every step must be safe to run twice**:
   write). A production version would give the chat post its own idempotency key so
   even that can't double.
 
-This ordering is the whole design, not an accident: put the idempotent, expensive
-effects first and the non-idempotent, cheap one last.
+So the rule is: idempotent, expensive effects first; the non-idempotent, cheap one last.
 
 ## Dead-letter, and why it answers 202
 
@@ -95,35 +97,93 @@ verification, because re-serialising would change the bytes and break the HMAC.
 | Permanent outbound failure (400, auth) | Dead-letter on first try |
 | Half-finished event (CRM ok, chat failed) | Per-step checkpoints; replay skips CRM |
 
-What it does **not** handle (documented, not hidden):
+What it does **not** handle:
 - **An old event replayed after a newer one.** The upsert carries no event time,
   so replaying an older dead letter sets the CRM's last payment back to the older
   amount. Sending `created` and keeping the newest on the CRM side would fix it.
 - **A signed event that fails validation.** It gets a 400 and is not stored; the
   provider's own dashboard is the only place it shows up.
-- **A restart.** The record of handled events is in memory, so after a deploy a
-  provider retry of an already-handled event runs it, and alerts, again.
+- **A restart (memory path).** The record of handled events is in memory, so after a
+  deploy a provider retry of an already-handled event runs it, and alerts, again. The
+  Postgres path keeps the record in the database (below).
 - **A lost chat response.** If the chat API received the post but the response
   timed out, the retry posts it again, so the alert appears twice. Retrying is right
   for the CRM upsert (idempotent) but not for the chat post, which has no idempotency
   key here.
 
-- **Durability.** The store is in memory, so a restart loses everything. A real
-  deployment is a database table with a unique key on the event id.
-- **A mid-processing crash orphans the event.** If the process dies after claiming
-  but before finishing, the record is stuck in `processing`, and a provider retry
-  is acknowledged as a duplicate — so the work is never completed *and* never
-  retried. The fix is a lease: a sweep that reclaims `processing` rows older than a
-  timeout and replays them. This repo records the state but does not run the sweep.
+- **Durability (memory path).** The store is in memory, so a restart loses
+  everything. The Postgres path is the durable version.
+- **A mid-processing crash orphans the event (memory path).** If the process dies
+  after claiming but before finishing, the record is stuck in `processing`, and a
+  provider retry is acknowledged as a duplicate, so the work is never completed *and*
+  never retried. The Postgres path closes this, provided its `drainPending()` runs on a
+  schedule: see below.
 - **A non-idempotent step can double on a crash** (the chat alert — see above);
   closing that fully needs a per-message idempotency key on the chat side.
 - **Volume.** Steps run inline, one event at a time, one event type. At higher
   volume a queue and workers replace the inline calls; the per-step checkpoint
   model carries over unchanged.
 
+## The Postgres path: claim and outbox in one transaction
+
+`src/pg-pipeline.ts` uses [exactly-once-webhooks](https://github.com/joshuavivo/exactly-once-webhooks)'
+Postgres store for the claim. Its `run(eventId, effect)` opens a transaction, inserts the
+idempotency key (a second delivery of the same id waits on that row and then reads it as a
+duplicate), runs the effect with the transaction's client, marks the key done and commits.
+
+The effect here does **database writes only**: the event row and one outbox row per step. That is
+the rule the library states for itself: an external call can't join a database transaction, so
+it is written down as a row and sent afterwards. If the effect (or the COMMIT) fails, the key,
+the event row and the outbox rows all roll back together, and the provider's retry starts clean.
+So there is no state in which the event is claimed but its work is not recorded. A crash
+after the commit leaves outbox rows that `drainPending()` sends; this repo provides that
+function but doesn't schedule it.
+
+After the commit, the calls are sent from the outbox:
+
+```
+UPDATE crm_outbox
+SET status = 'sending', lease_until = now() + <lease>, lease_token = gen_random_uuid()
+WHERE event_id = $1 AND step = $2
+  AND (status = 'pending' OR (status = 'sending' AND lease_until < now()))
+RETURNING lease_token
+```
+
+- A sender takes a row with that update and makes the call with the usual retry and backoff.
+  No transaction or row lock is held during the call. The lease marks the row as taken.
+- **Fencing.** The sender then marks the row `sent` (or `dead_lettered`) with
+  `... AND status = 'sending' AND lease_token = <its token>`. If its lease ran out and another
+  sender took the row, the token no longer matches, nothing is written, and this sender stops.
+  Without this, a sender that stalled past its lease could overwrite the other sender's `sent`
+  with `dead_lettered`, and a replay would then repeat calls that had already gone out.
+- Steps go in order. If the CRM row is held by another sender, the chat row is left alone, so
+  the alert never goes out before the CRM write has been marked sent.
+- Retries exhausted: a row in `crm_dead_letters` and the step marked `dead_lettered`, in one
+  transaction, only while the token is current. `replayDeadLetter` sets it back to `pending`
+  and sends again; steps already marked `sent` are skipped.
+- `drainPending()` sends every event with a row that is `pending`, or `sending` with an expired
+  lease, and skips events that have a dead-lettered step (those wait for a replay). One event's
+  failure goes to `onDrainError` and doesn't stop the rest.
+- Times: leases use the database clock (`now()`); `received_at` and a dead letter's `at` use
+  the injected `deps.now()`, like the memory path.
+
+What this does not fix: the calls themselves are at-least-once. A sender that dies after the
+call went out but before marking the row `sent` leaves a `sending` row; once its lease
+expires, another sender repeats the call. For the CRM upsert (keyed on email) that is
+harmless. For the chat post it is the duplicate-alert gap above, which needs an idempotency
+key on the chat side. The lease should also outlast a call and all its retries (`leaseMs`,
+default 60 s). If it doesn't, a slow sender's step is taken over while its call is still in
+flight. The token check keeps the outcome consistent, but the call has gone out twice.
+
 ## Testing
 
-`test/` runs under `node:test` with no services, and typechecks under `strict`
-TypeScript in CI on Node 22 and 24. The suite was checked by *removing* each
-safeguard — the step skip, the de-duplication, the signature check, the backoff —
-one at a time and confirming the matching tests turn red.
+`test/` runs under `node:test` and typechecks under `strict` TypeScript in CI on Node 22
+and 24. The memory-path tests need no services. The 17 Postgres tests run when
+`DATABASE_URL` is set. CI provides a Postgres 16 service and sets `REQUIRE_POSTGRES=1`, so a
+missing database fails the run instead of skipping it. The crash tests use a pool whose
+COMMIT fails once after the outbox rows are written (before the commit, or after it with the
+reply lost); the stalled-sender test uses a CRM call that outlives a 50 ms lease.
+
+The suite was checked by *removing* each safeguard (the step skip, the de-duplication, the
+signature check, the backoff, and on Postgres the single-transaction claim and the
+lease-token check) one at a time and confirming the matching tests turn red.

@@ -15,6 +15,10 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.20.5",
+    "pg": "^8.23.1",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "exactly-once-webhooks": "https://github.com/joshuavivo/exactly-once-webhooks/releases/download/v0.10.0/exactly-once-webhooks-0.10.0.tgz"
   }
 }

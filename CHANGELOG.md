@@ -4,6 +4,19 @@ Notable changes. Format follows [Keep a Changelog](https://keepachangelog.com/en
 
 ## [Unreleased]
 
+### Added
+- **A Postgres path (`src/pg-pipeline.ts`, `schema.sql`).** The claim goes through
+  [exactly-once-webhooks](https://github.com/joshuavivo/exactly-once-webhooks)' Postgres store,
+  and the event row and one outbox row per step commit in the same transaction. Nothing
+  outbound happens inside it; the calls are sent from the outbox afterwards, in order, under a
+  lease whose token fences late writers, with the existing retry and dead-letter rules. This
+  closes two of the three gaps the README listed, provided `drainPending()` runs on a
+  schedule (this repo provides it but doesn't schedule it): a crash mid-processing (the claim
+  and the work commit together or not at all) and a restart (the record is in Postgres). A
+  chat post whose reply is lost can still repeat; that gap stays in Limits. 17 tests against
+  a real Postgres, run in CI with no skips. The memory path is unchanged and imports nothing
+  outside Node.
+
 ### Fixed
 - **Bad data is rejected at the door.** Zero, negative and out-of-range amounts, a
   negative timestamp and a non-letter currency were accepted and posted a "Payment

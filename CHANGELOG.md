@@ -25,7 +25,7 @@ Notable changes. Format follows [Keep a Changelog](https://keepachangelog.com/en
 - **The email is no longer wrapped in `<...>` in the alert.** The alert read
   `Name <email>`, and an email like `!channel|a@b.co` passes validation, so the message
   contained `<!channel|a@b.co>`, Slack's channel-mention token. It now reads
-  `Name (email)`. Found by a pre-push review.
+  `Name (email)`. Found by a pre-push AI review.
 - **Three-decimal currencies in the alert.** 5120 KWD minor units was shown as
   "51.20 KWD" instead of 5.120. BHD, JOD, KWD, OMR and TND now use three decimals.
 
@@ -39,7 +39,7 @@ Notable changes. Format follows [Keep a Changelog](https://keepachangelog.com/en
 
 ## [0.2.1] - 2026-11-20
 
-Fixes from an independent review.
+Fixes from an AI review.
 
 ### Fixed
 - **Signature check over the raw bytes.** The server decoded the body as UTF-8

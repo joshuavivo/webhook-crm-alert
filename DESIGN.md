@@ -24,7 +24,9 @@ flowchart TD
 ## Exactly-once *effects* on an at-least-once channel
 
 A provider retries until it gets a 2xx, so the same event arrives more than once.
-Two mechanisms make the effects happen once:
+Two mechanisms make the effects happen once under redelivery and failed calls
+(the exceptions, a crash mid-processing and a chat post whose reply is lost, are in
+the failure model below):
 
 1. **Claim.** The first delivery inserts an event record; the check and the insert
    are one synchronous block, so two simultaneous deliveries cannot both win (the
@@ -47,7 +49,8 @@ If the process dies in that gap, the step is *not* recorded, so a later replay
 runs it again. That means **every step must be safe to run twice**:
 
 - `crm_upsert` is idempotent — it is keyed on the customer email, so a second
-  upsert with the same data is a no-op on the CRM side.
+  upsert with the same data is a no-op on the CRM side. (Only the *same* data:
+  replaying an older event after a newer one sets the older payment; see below.)
 - `chat_alert` is **not** idempotent — posting the same message twice posts it
   twice. So it is deliberately ordered **last**: the only step that can double on a
   crash is the cheapest to double (a duplicate chat line, not a duplicate CRM
@@ -88,11 +91,22 @@ verification, because re-serialising would change the bytes and break the HMAC.
 |---|---|
 | Forged / tampered / missing / stale-timestamp request | Signature check; nothing is claimed |
 | Duplicate or concurrent delivery | Atomic claim → `200 duplicate` |
-| Transient outbound failure (timeout, 503) | Retry with backoff |
+| Transient outbound failure (timeout, 503) | Retry with backoff (a chat post that was delivered but timed out is posted again; see below) |
 | Permanent outbound failure (400, auth) | Dead-letter on first try |
 | Half-finished event (CRM ok, chat failed) | Per-step checkpoints; replay skips CRM |
 
 What it does **not** handle (documented, not hidden):
+- **An old event replayed after a newer one.** The upsert carries no event time,
+  so replaying an older dead letter sets the CRM's last payment back to the older
+  amount. Sending `created` and keeping the newest on the CRM side would fix it.
+- **A signed event that fails validation.** It gets a 400 and is not stored; the
+  provider's own dashboard is the only place it shows up.
+- **A restart.** The record of handled events is in memory, so after a deploy a
+  provider retry of an already-handled event runs it, and alerts, again.
+- **A lost chat response.** If the chat API received the post but the response
+  timed out, the retry posts it again, so the alert appears twice. Retrying is right
+  for the CRM upsert (idempotent) but not for the chat post, which has no idempotency
+  key here.
 
 - **Durability.** The store is in memory, so a restart loses everything. A real
   deployment is a database table with a unique key on the event id.

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { PermanentError } from "../src/clients.ts";
+import { backoffDelays } from "../src/retry.ts";
 import { paymentEvent, setup, signed } from "./helpers.ts";
 
 const deliver = (h: ReturnType<typeof setup>["handler"], body: string) => h.handleWebhook(body, signed(body));
@@ -11,7 +12,7 @@ test("happy path: one CRM upsert and one alert", async () => {
   assert.equal(res.status, 200);
   assert.equal(crm.contacts.get("ada@example.com")?.lastPaymentCents, 4200);
   assert.deepEqual(chat.messages, [
-    { channel: "#payments", text: "Payment received: 42.00 USD from Ada Example <ada@example.com> (event evt_001)" },
+    { channel: "#payments", text: "Payment received: 42.00 USD from Ada Example (ada@example.com) (event evt_001)" },
   ]);
   assert.equal(store.get("evt_001")?.status, "done");
 });
@@ -123,4 +124,95 @@ test("malformed payloads get 400 and do not claim the id", async () => {
   assert.equal((await deliver(handler, floatAmount)).status, 400);
   assert.equal(store.get("evt_003"), undefined);
   assert.equal(store.get("evt_004"), undefined);
+});
+
+test("an impossible timestamp or amount is rejected at the door, not retried into the dead letter", async () => {
+  // created: 1e15 passed the old typeof check, then new Date(...).toISOString() threw inside the
+  // CRM step: retried, dead-lettered with a 202, and every replay would fail the same way.
+  const { handler, store, crm, chat, sleeps } = setup();
+  const data = { customer_email: "a@example.com", amount_cents: 4200, currency: "usd" };
+  const cases: Array<[string, Record<string, unknown>]> = [
+    ["evt_010", { created: 1e15 }],
+    ["evt_011", { created: -5 }],
+    ["evt_012", { data: { ...data, amount_cents: 0 } }],
+    ["evt_013", { data: { ...data, amount_cents: -4200 } }],
+    ["evt_014", { data: { ...data, amount_cents: 2 ** 60 } }],
+    ["evt_015", { data: { ...data, currency: "$$$" } }],
+  ];
+  for (const [id, overrides] of cases) {
+    const res = await deliver(handler, paymentEvent(id, overrides));
+    assert.equal(res.status, 400, `${id} should be rejected`);
+    assert.equal(store.get(id), undefined, `${id} should not claim the id`);
+  }
+  assert.equal(crm.calls, 0);
+  assert.equal(chat.calls, 0);
+  assert.deepEqual(sleeps, []);
+});
+
+test("zero-decimal currencies are not divided by 100 in the alert", async () => {
+  // 1000 JPY is a thousand yen, not 10.00: JPY and KRW have no minor unit.
+  const { handler, chat } = setup();
+  const body = paymentEvent("evt_020", { data: { customer_email: "a@example.com", amount_cents: 1000, currency: "jpy" } });
+  assert.equal((await deliver(handler, body)).status, 200);
+  assert.match(chat.messages[0].text, /Payment received: 1000 JPY from a@example\.com/);
+});
+
+test("three-decimal currencies are divided by 1000 in the alert", async () => {
+  // 5120 KWD minor units is 5.120 dinar, not 51.20.
+  const { handler, chat } = setup();
+  const body = paymentEvent("evt_021", { data: { customer_email: "a@example.com", amount_cents: 5120, currency: "kwd" } });
+  assert.equal((await deliver(handler, body)).status, 200);
+  assert.match(chat.messages[0].text, /Payment received: 5\.120 KWD from a@example\.com/);
+});
+
+test("a customer name or email that can't be real is rejected at the door", async () => {
+  const { handler, store, chat } = setup();
+  const cases: Array<[string, Record<string, unknown>]> = [
+    ["evt_030", { customer_email: "a@example.com", customer_name: { a: 1 }, amount_cents: 4200, currency: "usd" }],
+    ["evt_031", { customer_email: "@", amount_cents: 4200, currency: "usd" }],
+    ["evt_032", { customer_email: "a b@example.com", amount_cents: 4200, currency: "usd" }],
+  ];
+  for (const [id, data] of cases) {
+    assert.equal((await deliver(handler, paymentEvent(id, { data }))).status, 400, `${id} should be rejected`);
+    assert.equal(store.get(id), undefined);
+  }
+  assert.equal(chat.calls, 0);
+});
+
+test("text the customer typed can't add mentions or lines to the alert", async () => {
+  // Whoever types a name at checkout must not be able to ping the channel or forge a line.
+  const { handler, chat } = setup();
+  const name = "<!channel> @everyone\nPayment received: 99999.00 USD from ceo@example.com";
+  const body = paymentEvent("evt_033", { data: { customer_email: "a@example.com", customer_name: name, amount_cents: 4200, currency: "usd" } });
+  assert.equal((await deliver(handler, body)).status, 200);
+  const text = chat.messages[0].text;
+  assert.equal(text.split("\n").length, 1);
+  assert.doesNotMatch(text, /<!channel>|@everyone/);
+  assert.match(text, /^Payment received: 42\.00 USD from /);
+});
+
+test("backoff doubles and is capped at maxDelayMs", () => {
+  assert.deepEqual(backoffDelays({ attempts: 6, baseDelayMs: 100, maxDelayMs: 500 }), [100, 200, 400, 500, 500]);
+});
+
+test("chat-safe text stays on one line for every line break, and leaves real addresses intact", async () => {
+  const { handler, chat } = setup();
+  const name = "Ada\u2028Payment received: 1.00 USD\u2029x\u0085y\u009bz @everyone. @here-now (@channel) -@everyone x@everyone .@here +@channel _@here @everyone.x a@here.com";
+  const body = paymentEvent("evt_034", { data: { customer_email: "pat@here.com", customer_name: name, amount_cents: 4200, currency: "usd" } });
+  assert.equal((await deliver(handler, body)).status, 200);
+  const text = chat.messages[0].text;
+  assert.doesNotMatch(text, /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/);
+  assert.doesNotMatch(text, /@(everyone|here|channel)/i); // every mention, in the name and the email, is broken
+  assert.match(text, /\(pat@\u200bhere\.com\)/); // even a real address: x@everyone.com would otherwise ping
+});
+
+test("an email can't close into Slack's <!channel> syntax", async () => {
+  // "!channel|a@b.co" is a valid email shape. Wrapped in literal <...> it became <!channel|a@b.co>,
+  // Slack's own channel-mention token. Customer text is never wrapped in raw angle brackets.
+  const { handler, chat } = setup();
+  for (const [id, email] of [["evt_040", "!channel|a@b.co"], ["evt_041", "!subteam^S123|a@b.co"]]) {
+    const body = paymentEvent(id, { data: { customer_email: email, customer_name: "Ada", amount_cents: 4200, currency: "usd" } });
+    assert.equal((await deliver(handler, body)).status, 200);
+  }
+  for (const m of chat.messages) assert.doesNotMatch(m.text, /<!/);
 });

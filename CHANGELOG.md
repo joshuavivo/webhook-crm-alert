@@ -2,6 +2,41 @@
 
 Notable changes. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+- **Bad data is rejected at the door.** Zero, negative and out-of-range amounts, a
+  negative timestamp and a non-letter currency were accepted and posted a "Payment
+  received" alert. `created` was only checked to be a number, so `created: 1e15`
+  passed, then `new Date(...)` threw inside the CRM step: the event was retried,
+  dead-lettered with a 202, and every replay failed the same way. `created` must now be a positive Unix time a date can hold, `amount_cents` a
+  positive safe integer, and `currency` three letters; anything else is a 400 at the
+  door and the event id is not claimed.
+- **Zero-decimal currencies in the alert.** `formatMoney` always divided by 100, so
+  1000 JPY was announced as "10.00 JPY". Currencies with no minor unit (Stripe's
+  zero-decimal list: JPY, KRW, VND and others) are now shown as whole units.
+- **Customer text can't forge or ping in the alert.** A name typed at checkout went into
+  the chat verbatim, so `<!channel> @everyone` plus a newline could ping the channel and
+  add a fake "Payment received" line. Customer text is now one line (every line break,
+  including U+2028/2029 and C1 controls, becomes a space), with `&<>` escaped and every mass
+  mention broken, in the email too (a valid address like `x@everyone.com` would otherwise
+  ping; the cost is a hidden character in such an address). A non-text or overlong name and an email that isn't shaped like
+  one (`"@"`) are rejected at the door; they used to post `[object Object] <@>`.
+- **The email is no longer wrapped in `<...>` in the alert.** The alert read
+  `Name <email>`, and an email like `!channel|a@b.co` passes validation, so the message
+  contained `<!channel|a@b.co>`, Slack's channel-mention token. It now reads
+  `Name (email)`. Found by a pre-push review.
+- **Three-decimal currencies in the alert.** 5120 KWD minor units was shown as
+  "51.20 KWD" instead of 5.120. BHD, JOD, KWD, OMR and TND now use three decimals.
+
+### Changed
+- The README's first screen now says where a failed event goes (a dead-letter list
+  that code can replay; there is no UI) and counts three gaps, not two: a restart
+  is one, since handled events are remembered in memory. README Limits and
+  DESIGN.md now also cover an old event replayed after a newer one (the CRM's last
+  payment goes backwards), signed events that fail validation (400, not stored),
+  and emails compared case-sensitively.
+
 ## [0.2.1] - 2026-11-20
 
 Fixes from an independent review.

@@ -1,5 +1,13 @@
 # Payment webhook → CRM → chat alert
 
+**When a "payment received" alert goes missing, nobody follows up with the customer who just
+paid. When it fires twice, two people chase the same customer.** This sample makes the alert
+and the CRM update happen once under provider retries and failed outbound calls, and when
+something fails, it lands in a dead-letter list (`store.deadLetters()`) that a person or a
+script can replay (`replayDeadLetter`); there is no UI or route for it. (Three gaps remain: a
+crash mid-processing, a chat post whose reply is lost, and a restart, because the record of
+handled events is in memory; see Limits.)
+
 A payment provider sends a webhook when a charge succeeds. Someone wants the customer in the
 CRM and a message in the team channel. That part is easy. The hard part is what happens when
 things go wrong:
@@ -17,6 +25,14 @@ things go wrong:
 I built this sample to show how I handle those four cases. The CRM and chat clients are interfaces
 with in-memory fakes. They are shaped like a typical contacts API and a typical incoming-webhook
 chat API, but this is not any vendor's code and it needs no accounts or keys.
+
+Text the customer typed (their name, their email) is made safe before it goes into the team
+chat: one line, no mention or link syntax (`&<>` escaped), and no `@everyone`-style mentions,
+so a name typed at checkout can't ping the channel or add a fake "Payment received" line.
+Ordinary formatting such as `*bold*` still passes through, and a chat app may still turn a
+bare URL in a name into a link. An email at a domain starting with `here`, `everyone` or
+`channel` is shown with a hidden zero-width character after the `@`, so a copy of it won't
+paste cleanly; that is the price of `x@everyone.com` not pinging the channel.
 
 ## How it works
 
@@ -39,7 +55,7 @@ chat API, but this is not any vendor's code and it needs no accounts or keys.
 6. **Replay** a dead letter with `replayDeadLetter(eventId)`. Steps that already succeeded are
    skipped.
 
-Amounts are integer cents end to end. A float amount is rejected at the door.
+Amounts are integers in the currency's smallest unit end to end (cents for USD, whole yen for JPY, fils for KWD). A float, zero, negative or out-of-range amount, a currency that isn't three letters, an email that isn't shaped like one, a non-text or overlong name, and a timestamp no clock can show are rejected at the door with a 400, before the event id is claimed, so impossible data neither posts a bogus alert nor gets retried into the dead letter.
 
 ## Files
 
@@ -51,7 +67,7 @@ Amounts are integer cents end to end. A float amount is rejected at the door.
 | `src/store.ts` | Event and dead-letter store interface, plus the in-memory version. |
 | `src/clients.ts` | CRM and chat interfaces, plus fakes that can be scripted to fail. |
 | `src/server.ts` | `node:http` server on `POST /webhooks/payments`, raw body, 256 KB limit. |
-| `test/` | 19 tests, `node:test`. |
+| `test/` | 28 tests, `node:test`. |
 
 ## Run it
 
@@ -93,6 +109,16 @@ check and the backoff one at a time, and each removal turned the matching tests 
 - If the CRM write succeeds but the response is lost, the retry calls upsert again. That is
   safe because an upsert keyed on email is idempotent on the CRM side. A non-idempotent call
   would need its own idempotency key.
+- If the chat post goes through but its reply is lost (a timeout), the retry posts it again and
+  the alert appears twice. The chat step has no idempotency key; a real version would add one.
+- A signed event that fails validation (say a $0 payment) gets a 400 and is not stored. The
+  provider keeps retrying it and shows it as failing in its own dashboard; this sample keeps no
+  record of it. A real version would also log or store rejected payloads.
+- Replaying an old dead letter after a newer payment for the same customer sets the CRM's last
+  payment back to the older one: the upsert carries no event time to compare. A real version
+  sends `created` and lets the CRM keep the newest.
+- Emails are passed as received, so `Ada@Example.com` and `ada@example.com` are two contacts,
+  and the CRM gets the amount without its currency.
 - Steps run one after another and only one event type is handled. A queue and workers would
   replace the inline calls at higher volume.
 

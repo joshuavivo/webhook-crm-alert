@@ -35,18 +35,9 @@ export function createHandler(deps: Deps) {
   // rawBody is the bytes as received. Pass a Buffer from an HTTP server: decoding it to a
   // string first would turn invalid UTF-8 into U+FFFD and break a valid signature.
   async function handleWebhook(rawBody: string | Buffer, signatureHeader: string | undefined): Promise<HandlerResult> {
-    const nowSec = Math.floor(deps.now().getTime() / 1000);
-    const sig = verifySignature(rawBody, signatureHeader, deps.secret, nowSec);
-    if (!sig.ok) return { status: 401, body: { error: sig.reason } };
-
-    let event: PaymentEvent;
-    try {
-      event = JSON.parse(typeof rawBody === "string" ? rawBody : rawBody.toString("utf8"));
-    } catch {
-      return { status: 400, body: { error: "body is not JSON" } };
-    }
-    const problem = validate(event);
-    if (problem) return { status: 400, body: { error: problem } };
+    const checked = checkRequest(rawBody, signatureHeader, deps.secret, deps.now());
+    if ("status" in checked) return checked;
+    const event = checked.event;
 
     if (!deps.store.claim(event.id, event.type, event, deps.now().toISOString())) {
       // Already seen. The provider is retrying; acknowledge and do nothing.
@@ -91,25 +82,60 @@ export function createHandler(deps: Deps) {
     return "done";
   }
 
-  async function perform(step: Step, event: PaymentEvent): Promise<void> {
-    const d = event.data;
-    if (step === "crm_upsert") {
-      await deps.crm.upsertContact({
-        email: d.customer_email,
-        name: d.customer_name,
-        lastPaymentCents: d.amount_cents,
-        lastPaymentAt: new Date(event.created * 1000).toISOString(),
-      });
-    } else {
-      const email = chatSafe(d.customer_email);
-      // Parentheses, not <...>: customer text inside raw angle brackets can form a chat token
-      // (an email of "!channel|a@b.co" became Slack's <!channel|...> mention).
-      const who = d.customer_name ? `${chatSafe(d.customer_name)} (${email})` : email;
-      await deps.chat.postMessage(deps.alertChannel, `Payment received: ${formatMoney(d.amount_cents, d.currency)} from ${who} (event ${chatSafe(event.id)})`);
-    }
-  }
+  const perform = (step: Step, event: PaymentEvent) => performStep(step, event, deps);
 
   return { handleWebhook, replayDeadLetter };
+}
+
+export const HANDLED = HANDLED_TYPE;
+export { STEPS };
+
+/**
+ * Signature check, JSON parse and validation, shared by the memory and Postgres paths.
+ * Returns the event, or the response to send when the request is refused.
+ */
+export function checkRequest(
+  rawBody: string | Buffer,
+  signatureHeader: string | undefined,
+  secret: string,
+  now: Date,
+): { event: PaymentEvent } | HandlerResult {
+  const nowSec = Math.floor(now.getTime() / 1000);
+  const sig = verifySignature(rawBody, signatureHeader, secret, nowSec);
+  if (!sig.ok) return { status: 401, body: { error: sig.reason } };
+
+  let event: PaymentEvent;
+  try {
+    event = JSON.parse(typeof rawBody === "string" ? rawBody : rawBody.toString("utf8"));
+  } catch {
+    return { status: 400, body: { error: "body is not JSON" } };
+  }
+  const problem = validate(event);
+  if (problem) return { status: 400, body: { error: problem } };
+  return { event };
+}
+
+/** The two outbound calls. Shared by both paths so the alert text is identical. */
+export async function performStep(
+  step: Step,
+  event: PaymentEvent,
+  deps: Pick<Deps, "crm" | "chat" | "alertChannel">,
+): Promise<void> {
+  const d = event.data;
+  if (step === "crm_upsert") {
+    await deps.crm.upsertContact({
+      email: d.customer_email,
+      name: d.customer_name,
+      lastPaymentCents: d.amount_cents,
+      lastPaymentAt: new Date(event.created * 1000).toISOString(),
+    });
+  } else {
+    const email = chatSafe(d.customer_email);
+    // Parentheses, not <...>: customer text inside raw angle brackets can form a chat token
+    // (an email of "!channel|a@b.co" became Slack's <!channel|...> mention).
+    const who = d.customer_name ? `${chatSafe(d.customer_name)} (${email})` : email;
+    await deps.chat.postMessage(deps.alertChannel, `Payment received: ${formatMoney(d.amount_cents, d.currency)} from ${who} (event ${chatSafe(event.id)})`);
+  }
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // shape only; the provider already verified it

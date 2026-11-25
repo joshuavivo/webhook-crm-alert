@@ -19,6 +19,6 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "exactly-once-webhooks": "https://github.com/joshuavivo/exactly-once-webhooks/releases/download/v0.10.0/exactly-once-webhooks-0.10.0.tgz"
+    "exactly-once-webhooks": "^0.10.1"
   }
 }

@@ -43,6 +43,10 @@ Notable changes. Format follows [Keep a Changelog](https://keepachangelog.com/en
   "51.20 KWD" instead of 5.120. BHD, JOD, KWD, OMR and TND now use three decimals.
 
 ### Changed
+- **`exactly-once-webhooks` is installed from npm** (`^0.10.1`) instead of the v0.10.0
+  release tarball URL, now that it is on the registry. The README said it was not.
+- **README names the signature header** (`payment-signature`) and says the timestamp
+  tolerance is five minutes in either direction, which is what `src/signature.ts` checks.
 - The README's first screen now says where a failed event goes (a dead-letter list
   that code can replay; there is no UI) and counts three gaps, not two: a restart
   is one, since handled events are remembered in memory. README Limits and

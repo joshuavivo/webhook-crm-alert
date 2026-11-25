@@ -40,9 +40,9 @@ paste cleanly; that is the price of `x@everyone.com` not pinging the channel.
 
 ## How it works
 
-1. **Verify.** The signature header is `t=<unix seconds>,v1=<hex HMAC-SHA256>` over
+1. **Verify.** The `payment-signature` header is `t=<unix seconds>,v1=<hex HMAC-SHA256>` over
    `"<t>.<raw body>"`. The check uses the exact bytes received, compares in constant time,
-   rejects anything older than five minutes, and accepts several `v1` values so a secret can be
+   rejects a timestamp more than five minutes from now in either direction, and accepts several `v1` values so a secret can be
    rotated. A rejected request does not claim the event id.
 2. **Claim the event id.** If the id has been seen before, the response is `200 duplicate` and
    nothing runs. The check and the insert happen together, so two simultaneous deliveries
@@ -127,8 +127,7 @@ The schema is in [`schema.sql`](schema.sql). Load it after exactly-once-webhooks
 
 Node 22.18 or newer runs the TypeScript directly. The Postgres path needs Postgres 13 or newer.
 The memory path imports nothing outside Node. `exactly-once-webhooks` is a package dependency
-that only the Postgres path loads; it is installed from its GitHub release (it isn't on the npm
-registry yet). The Postgres tests use `pg`, a dev dependency; the pipeline itself takes any
+that only the Postgres path loads; it is installed from the npm registry. The Postgres tests use `pg`, a dev dependency; the pipeline itself takes any
 pool with `connect()` and `query()`.
 
 ```sh
